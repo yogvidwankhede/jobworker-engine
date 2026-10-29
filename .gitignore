@@ -1,0 +1,17 @@
+.env
+.venv/
+*.egg-info/
+__pycache__/
+*.pyc
+.superpowers/
+proof/
+logs/
+*.pdf
+*.aux
+*.log
+*.out
+
+# Personal data is overlaid at run time from the private repo. Never commit it here.
+worker/data/*
+!worker/data/README.md
+handoff/

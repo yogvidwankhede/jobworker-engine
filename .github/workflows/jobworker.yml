@@ -1,0 +1,161 @@
+# Public engine repo. Personal data and run state live in a PRIVATE repo (secret DATA_REPO) and are
+# fetched at run time. Worker output is written to that private repo, never to this public log.
+name: JobWorker Cloud Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: Command to run
+        required: true
+        default: run
+        type: choice
+        options: [cycle, run, ready, digest, review, sweep, doctor, status, dry-run]
+  schedule:
+    - cron: "30 * * * *"
+      timezone: America/Chicago
+    - cron: "15 17 * * *"
+      timezone: America/Chicago
+    - cron: "0 16 * * 5"
+      timezone: America/Chicago
+    - cron: "30 11 * * *"
+      timezone: America/Chicago
+    - cron: "0 17 * * *"
+      timezone: America/Chicago
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobworker
+  cancel-in-progress: false
+
+env:
+  TZ: America/Chicago
+  AIRTABLE_TOKEN: ${{ secrets.AIRTABLE_TOKEN }}
+  AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
+  GMAIL_USER: ${{ secrets.GMAIL_USER }}
+  GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+  APOLLO_API_KEY: ${{ secrets.APOLLO_API_KEY }}
+  WORKER_LLM_BACKEND: claude_code
+  CLAUDE_CODE_MODEL: sonnet
+  CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+jobs:
+  worker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick the command
+        id: which
+        env:
+          REQUESTED_COMMAND: ${{ inputs.command }}
+          TRIGGER_SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          if [ -n "$REQUESTED_COMMAND" ]; then
+            echo "cmd=$REQUESTED_COMMAND" >> "$GITHUB_OUTPUT"
+          else
+            case "$TRIGGER_SCHEDULE" in
+              "30 * * * *") echo "cmd=cycle" >> "$GITHUB_OUTPUT" ;;
+              "15 17 * * *") echo "cmd=digest" >> "$GITHUB_OUTPUT" ;;
+              "0 16 * * 5") echo "cmd=review" >> "$GITHUB_OUTPUT" ;;
+              "30 11 * * *"|"0 17 * * *") echo "cmd=sweep" >> "$GITHUB_OUTPUT" ;;
+              *) exit 1 ;;
+            esac
+          fi
+
+      # Private repo: worker/data (profile, answers, ledger, resumes) on main, run state on handoff-data.
+      - name: Fetch private data repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.DATA_REPO }}
+          token: ${{ secrets.DATA_REPO_TOKEN }}
+          path: private
+
+      - name: Overlay private data onto the engine
+        run: cp -R private/worker/data/. worker/data/
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install the worker
+        run: pip install -e .
+
+      - name: Install LaTeX for cloud resume compilation
+        if: contains(fromJSON('["cycle", "run", "ready", "doctor", "dry-run"]'), steps.which.outputs.cmd)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base texlive-latex-recommended \
+            texlive-latex-extra texlive-fonts-recommended lmodern
+
+      - uses: actions/setup-node@v4
+        if: contains(fromJSON('["cycle", "run", "ready", "doctor", "dry-run"]'), steps.which.outputs.cmd)
+        with:
+          node-version: "22"
+
+      - name: Install the Claude Code CLI and Chromium
+        if: contains(fromJSON('["cycle", "run", "ready", "doctor", "dry-run"]'), steps.which.outputs.cmd)
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          playwright install --with-deps chromium
+
+      - name: Restore private cloud state
+        id: state
+        run: |
+          git -C private fetch --quiet --depth=1 origin handoff-data
+          git -C private worktree add --quiet --detach "$HOME/JobWorker" FETCH_HEAD
+          mkdir -p "$HOME/JobWorker/logs"
+          echo "restored=true" >> "$GITHUB_OUTPUT"
+
+      # Everything the worker prints goes to a file in the private repo. This public log only shows the exit code,
+      # so company names, roles, answers and errors are never published.
+      - name: Run the worker
+        env:
+          WORKER_COMMAND: ${{ steps.which.outputs.cmd }}
+        run: |
+          LOG="$HOME/JobWorker/logs/run-$(date -u +%Y%m%dT%H%M%SZ)-$WORKER_COMMAND.log"
+          set +e
+          (
+            set -e
+            case "$WORKER_COMMAND" in
+              ready) worker doctor --skip-inference --application-only ;;
+              cycle|run|dry-run)
+                worker doctor --skip-inference --application-only
+                if ! worker doctor --inference-only; then
+                  if [ "$WORKER_COMMAND" != dry-run ]; then
+                    # Expected quota deferral succeeds and is retried next hour. Infrastructure failures still fail.
+                    worker cycle --model-unavailable
+                    exit 0
+                  fi
+                  exit 1
+                fi
+                ;;
+            esac
+            if [ "$WORKER_COMMAND" = ready ]; then
+              worker run --ready-only
+            else
+              worker "$WORKER_COMMAND"
+            fi
+          ) > "$LOG" 2>&1
+          code=$?
+          echo "worker '$WORKER_COMMAND' exit code: $code (full output is in the private state repo)"
+          exit $code
+
+      - name: Persist proof, queued resume state and logs to the private repo
+        if: always() && steps.state.outputs.restored == 'true'
+        run: |
+          cd "$HOME/JobWorker"
+          find logs -type f -mtime +14 -delete 2>/dev/null || true
+          mkdir -p proof handoff logs
+          # Generated application data and logs only, never .env files or credentials.
+          git add -f -- proof handoff logs
+          if ! git diff --cached --quiet; then
+            git -c user.email="jobworker-bot@users.noreply.github.com" \
+                -c user.name="JobWorker Bot" \
+                commit -q -m "Cloud worker state $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push -q origin HEAD:handoff-data
+          fi

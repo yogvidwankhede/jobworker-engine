@@ -1,0 +1,51 @@
+# Frequent cloud outreach checks. No browser, local model, or Mac session is required.
+# Personal data comes from the private repo (DATA_REPO); output goes to the private repo, not this public log.
+name: JobWorker Send Pending Recruiter Emails
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0,30 8-12 * * *"
+      timezone: America/Chicago
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jobworker
+  cancel-in-progress: false
+
+env:
+  TZ: America/Chicago
+  AIRTABLE_TOKEN: ${{ secrets.AIRTABLE_TOKEN }}
+  AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
+  GMAIL_USER: ${{ secrets.GMAIL_USER }}
+  GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+  APOLLO_API_KEY: ${{ secrets.APOLLO_API_KEY }}
+
+jobs:
+  send-pending:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch private data repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.DATA_REPO }}
+          token: ${{ secrets.DATA_REPO_TOKEN }}
+          path: private
+      - name: Overlay private data onto the engine
+        run: cp -R private/worker/data/. worker/data/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install the worker
+        run: pip install -e .
+      - name: Send delayed recruiter emails
+        run: |
+          set +e
+          worker send-pending > "$RUNNER_TEMP/send-pending.log" 2>&1
+          code=$?
+          echo "send-pending exit code: $code (output is not published from this public repo)"
+          exit $code

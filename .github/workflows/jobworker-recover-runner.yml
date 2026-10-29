@@ -1,0 +1,33 @@
+name: JobWorker Recover Unstarted Cloud Run
+
+on:
+  workflow_run:
+    workflows: [JobWorker Cloud Run]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: write
+  checks: read
+
+concurrency:
+  group: jobworker-runner-recovery-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Recover only a confirmed runner acquisition failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m worker.cloud_recovery

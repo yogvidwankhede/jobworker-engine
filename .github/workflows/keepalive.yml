@@ -1,0 +1,23 @@
+# GitHub disables scheduled workflows in public repos after about 60 days without repository activity.
+# This makes one small commit a month so the hourly worker schedule stays enabled.
+name: Keepalive
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 12 1 * *"
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record activity
+        run: |
+          git -c user.email="jobworker-bot@users.noreply.github.com" -c user.name="JobWorker Bot" \
+              commit --allow-empty -q -m "Keepalive $(date -u +%Y-%m-%d)"
+          git push -q origin HEAD
