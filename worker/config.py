@@ -98,6 +98,9 @@ class Settings(BaseModel):
     company_cooldown_days: int = Field(default=0, ge=0)
     company_cooldown_started_on: str | None = None
     include_internships: bool = False
+    # Mid-fit roles (review_floor <= score < fit_threshold) are parked as 'Scored' for the phone swipe deck.
+    review_floor: int = 55
+    review_queue_max: int = 150
     total_target: int = 30        # fill to this many across tiers when a tier runs short
     # Yogvid's standing authorization covers matching applications without per-application approval.
     auto_submit: bool = True
@@ -144,6 +147,8 @@ def parse_settings(kv: dict[str, str]) -> Settings:
         company_cooldown_days=int(kv.get('company_cooldown_days') or 0),
         company_cooldown_started_on=kv.get('company_cooldown_started_on'),
         include_internships=_bool(kv.get("include_internships"), False),
+        review_floor=int(kv.get("review_floor") or s.review_floor),
+        review_queue_max=int(kv.get("review_queue_max") or s.review_queue_max),
         total_target=int(kv.get("total_target") or s.total_target),
         email_delay_minutes=int(kv.get("email_delay_minutes") or s.email_delay_minutes),
     )

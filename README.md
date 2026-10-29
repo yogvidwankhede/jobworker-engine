@@ -23,6 +23,10 @@ Each workflow checks out the private repo, copies `worker/data/` over the engine
 3. Add these Actions secrets to this repo: `DATA_REPO` (`owner/private-repo`), `DATA_REPO_TOKEN`, `AIRTABLE_TOKEN`, `AIRTABLE_BASE_ID`, `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `CLAUDE_CODE_OAUTH_TOKEN`, and optionally `APOLLO_API_KEY`.
 4. Run the **JobWorker Cloud Run** workflow with the `doctor` command, then `status`, then `dry-run`, before enabling live cycles.
 
+## Phone swipe deck
+
+`docs/index.html` is a static page (published with GitHub Pages) for approving jobs by swiping. Mid-fit roles (score between the Airtable Settings keys `review_floor`, default 55, and `fit_threshold`, default 70) are parked as `Scored` rows. Swipe right sets the row to `Ready`, and the next worker cycle tailors a resume and submits it; swipe left sets `Skipped`. High-fit roles still follow `auto_submit`. Open the Pages URL on your phone, enter an Airtable token (scopes `data.records:read` and `data.records:write` on your base) and base ID once, then use Add to Home Screen. The token stays in that browser only. A daily right-swipe limit (default 30) is enforced in the page, and `review_queue_max` (default 150) limits how many cards wait.
+
 ## Operations
 
 From the **JobWorker Cloud Run** workflow, choose a command: `status`, `doctor`, `dry-run`, `ready`, `cycle`, `digest`, `review`, `sweep`, `run`.

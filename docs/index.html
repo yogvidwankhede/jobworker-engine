@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Swipe Jobs</title>
+<style>
+:root{--bg:#0f1115;--card:#1a1d24;--ink:#f2f3f5;--mute:#9aa1ad;--ok:#2fbf71;--no:#e5484d;--line:#2a2e38;--accent:#6ea8ff}
+@media (prefers-color-scheme:light){:root{--bg:#f4f5f7;--card:#fff;--ink:#14161a;--mute:#5b6270;--line:#e1e4ea}}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overscroll-behavior:none}
+#app{display:flex;flex-direction:column;height:100dvh;padding:env(safe-area-inset-top) 16px env(safe-area-inset-bottom)}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 0;color:var(--mute);font-size:14px}
+header button{background:none;border:0;color:var(--mute);font-size:14px;padding:8px}
+#stage{position:relative;flex:1;min-height:0}
+.card{position:absolute;inset:0 0 8px 0;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px;display:flex;flex-direction:column;gap:10px;touch-action:pan-y;will-change:transform;overflow:auto}
+.card.back{transform:scale(.96) translateY(10px);opacity:.6;pointer-events:none}
+.score{align-self:flex-start;font-weight:700;padding:4px 10px;border-radius:999px;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+.co{font-size:26px;font-weight:700;line-height:1.15;margin:4px 0 0}.role{font-size:19px;margin:0}
+.meta{color:var(--mute);font-size:15px}.why{white-space:pre-wrap;font-size:15px;border-top:1px solid var(--line);padding-top:10px}
+.stamp{position:absolute;top:22px;font-weight:800;font-size:28px;border:3px solid;border-radius:10px;padding:2px 12px;opacity:0;pointer-events:none}
+.stamp.y{right:20px;color:var(--ok);transform:rotate(10deg)}.stamp.n{left:20px;color:var(--no);transform:rotate(-10deg)}
+a.open{color:var(--accent);font-size:15px}
+#bar{display:flex;justify-content:center;gap:28px;padding:10px 0 14px}
+#bar button{width:68px;height:68px;border-radius:50%;border:2px solid;background:var(--card);font-size:28px;cursor:pointer}
+#no{color:var(--no);border-color:var(--no)}#yes{color:var(--ok);border-color:var(--ok)}#undo{width:48px!important;height:48px!important;align-self:center;font-size:20px!important;color:var(--mute);border-color:var(--line)}
+#msg{text-align:center;color:var(--mute);padding:40px 12px}
+form{display:flex;flex-direction:column;gap:12px;padding:24px 0}
+input{padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:16px}
+button.primary{padding:14px;border-radius:12px;border:0;background:var(--accent);color:#06101f;font-weight:700;font-size:16px}
+small{color:var(--mute)}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><span id="count"></span><span id="cap"></span><button id="gear" aria-label="Settings">Settings</button></header>
+  <div id="stage"></div>
+  <div id="bar" hidden><button id="no" aria-label="Skip">✕</button><button id="undo" aria-label="Undo">↺</button><button id="yes" aria-label="Apply">✓</button></div>
+</div>
+<script>
+// Static page: no secrets in this file. The token and base ID are typed once and kept only in this browser.
+const T_JOBS = "tblovSc8jNq9tYUer";
+const F = {company:"fldEICGK1eYk9XqCk", role:"fldD0Y0tsgyOFbhCh", tier:"fld8TFhbrnG7inZdq", apply:"fldk91QtvCrpYw4zm",
+  src:"fldqMO5Z3Dhl5sIsZ", score:"fld4aS2JTkrdzLBwm", why:"fldTB1qHeI4sicDNr", status:"fldsiYAoov5ojXhkk",
+  salary:"fldKnBfYc0eN8tJiY", loc:"fldJkHm2bEpp9MADx", next:"fldrmCDH2hxIJtC0F", notes:"fldJBfWaDHQ2MPVTC"};
+const $ = s => document.querySelector(s);
+const store = {get(k,d=""){try{return localStorage.getItem(k)??d}catch{return d}}, set(k,v){try{localStorage.setItem(k,v)}catch{}}};
+let deck = [], history = [];
+const today = () => new Date().toLocaleDateString("en-CA");
+const rightToday = () => store.get("day") === today() ? +store.get("rights","0") : 0;
+const capN = () => +store.get("cap","30");
+const api = (path, opt={}) => fetch(`https://api.airtable.com/v0/${store.get("base")}/${T_JOBS}${path}`, {...opt,
+  headers:{Authorization:`Bearer ${store.get("token")}`, "Content-Type":"application/json"}});
+
+function setup(err=""){
+  $("#bar").hidden = true;
+  $("#stage").innerHTML = `<form id="f"><h2>Connect Airtable</h2>${err?`<p style="color:var(--no)">${err}</p>`:""}
+    <input id="t" type="password" placeholder="Airtable personal access token" autocomplete="off" value="${store.get("token")}">
+    <input id="b" placeholder="Base ID (app…)" autocomplete="off" value="${store.get("base")}">
+    <input id="c" type="number" min="1" placeholder="Max right-swipes per day" value="${capN()}">
+    <small>Token scopes: data.records:read and data.records:write on this one base. It stays in this browser only.</small>
+    <button class="primary">Save and load jobs</button></form>`;
+  $("#f").onsubmit = e => {e.preventDefault(); store.set("token",$("#t").value.trim()); store.set("base",$("#b").value.trim());
+    store.set("cap",$("#c").value||"30"); load();};
+}
+
+async function load(){
+  if(!store.get("token")||!store.get("base")) return setup();
+  $("#stage").innerHTML = `<div id="msg">Loading…</div>`;
+  const q = `?returnFieldsByFieldId=true&pageSize=100&filterByFormula=${encodeURIComponent(`{${F.status}}='Scored'`)}`;
+  let rows = [], off = "";
+  try{
+    do{
+      const r = await api(q + (off?`&offset=${off}`:"")); if(!r.ok) return setup(`Airtable said ${r.status}. Check token, scopes and base ID.`);
+      const j = await r.json(); rows = rows.concat(j.records); off = j.offset||"";
+    }while(off && rows.length<400);
+  }catch{ return $("#stage").innerHTML = `<div id="msg">Offline. <button class="primary" onclick="load()">Retry</button></div>`; }
+  deck = rows.map(r => ({id:r.id, ...Object.fromEntries(Object.entries(F).map(([k,v]) => [k, r.fields[v]]))}))
+             .sort((a,b) => (b.score||0)-(a.score||0));
+  history = []; render();
+}
+
+function render(){
+  const stage = $("#stage"); stage.innerHTML = "";
+  $("#count").textContent = `${deck.length} waiting`;
+  $("#cap").textContent = `${rightToday()}/${capN()} applied today`;
+  $("#bar").hidden = false;
+  if(!deck.length){ stage.innerHTML = `<div id="msg">All caught up. New roles appear after the next worker cycle.</div>`; return; }
+  [deck[1], deck[0]].forEach((j,i) => { if(!j) return; stage.append(card(j, i===0)); });
+}
+
+function card(j, back){
+  const el = document.createElement("div"); el.className = "card" + (back?" back":"");
+  const esc = s => String(s??"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  el.innerHTML = `<span class="stamp y">APPLY</span><span class="stamp n">SKIP</span>
+    <span class="score">Fit ${esc(j.score)}</span><h1 class="co">${esc(j.company)}</h1><p class="role">${esc(j.role)}</p>
+    <div class="meta">${[j.loc, j.salary, j.tier, j.src].filter(Boolean).map(esc).join(" · ")}</div>
+    <div class="why">${esc(j.why)}</div>${j.apply?`<a class="open" target="_blank" rel="noopener" href="${esc(j.apply)}">View posting</a>`:""}`;
+  if(!back) drag(el, j); return el;
+}
+
+function drag(el, j){
+  let x0=0, dx=0, on=false;
+  el.addEventListener("pointerdown", e => { if(e.target.closest("a")) return; on=true; x0=e.clientX; el.setPointerCapture(e.pointerId); });
+  el.addEventListener("pointermove", e => { if(!on) return; dx=e.clientX-x0;
+    el.style.transform=`translateX(${dx}px) rotate(${dx/18}deg)`;
+    el.querySelector(".stamp.y").style.opacity = Math.max(0,dx/120); el.querySelector(".stamp.n").style.opacity = Math.max(0,-dx/120); });
+  el.addEventListener("pointerup", () => { if(!on) return; on=false;
+    if(Math.abs(dx)>110) decide(dx>0); else {el.style.transform=""; el.querySelectorAll(".stamp").forEach(s=>s.style.opacity=0);} dx=0; });
+}
+
+async function decide(yes){
+  const j = deck[0]; if(!j) return;
+  if(yes && rightToday()>=capN()){ alert(`Daily limit of ${capN()} reached. Change it in Settings.`); return render(); }
+  const top = $("#stage").lastElementChild;
+  top.style.transition="transform .25s"; top.style.transform=`translateX(${yes?600:-600}px) rotate(${yes?30:-30}deg)`;
+  await new Promise(r=>setTimeout(r,230));
+  deck.shift(); history.push({j, yes}); render();
+  if(yes){ store.set("day",today()); store.set("rights", rightToday()+1); $("#cap").textContent = `${rightToday()}/${capN()} applied today`; }
+  write(j, yes ? "Ready" : "Skipped", yes ? "Approved by swipe" : "Skipped by swipe");
+}
+
+async function write(j, status, next){
+  try{
+    const r = await api(`/${j.id}`, {method:"PATCH", body:JSON.stringify({fields:{[F.status]:status,[F.next]:next}})});
+    if(!r.ok) throw 0;
+  }catch{ alert("Could not save that swipe. Check your connection; the card is back in the deck."); deck.unshift(j); history.pop(); render(); }
+}
+
+async function undo(){
+  const h = history.pop(); if(!h) return;
+  if(h.yes){ store.set("rights", Math.max(0, rightToday()-1)); }
+  deck.unshift(h.j); render(); write(h.j, "Scored", "Waiting for your swipe");
+}
+
+$("#yes").onclick = () => decide(true); $("#no").onclick = () => decide(false); $("#undo").onclick = undo;
+$("#gear").onclick = () => setup();
+addEventListener("keydown", e => { if(e.key==="ArrowRight") decide(true); if(e.key==="ArrowLeft") decide(false); });
+load();
+</script>
+</body>
+</html>

@@ -24,6 +24,33 @@ TERMINAL = {"Applied", "Submitting", "Recruiter emailed", "Needs you", "Ready to
 TIER_ORDER = ["big", "mid", "startup"]
 
 
+def _park_for_review(scored, chosen, settings, lookup, store, rep, all_jobs) -> int:
+    """Park unselected, non-rejected mid-fit postings as 'Scored' so the phone swipe deck can offer them.
+
+    Swipe right sets the row to 'Ready' (the worker then tailors and submits it); swipe left sets 'Skipped'.
+    Capped by `review_queue_max` including rows already waiting."""
+    waiting = sum(1 for j in all_jobs if j.status == "Scored")
+    room = max(0, settings.review_queue_max - waiting)
+    parked = 0
+    for x in sorted(scored, key=lambda x: -x.score):
+        if parked >= room:
+            break
+        if x in chosen or x.rejected or x.score < settings.review_floor or not x.posting.apply_url:
+            continue
+        if lookup(x.posting):
+            continue
+        p = x.posting
+        try:
+            store.upsert_job(Job(company=p.company, role=p.title, tier=p.tier, source_url=p.url, apply_url=p.apply_url,
+                                 source=p.ats, date_found=rep.date, fit_score=x.score, fit_reasons=x.reason,
+                                 status="Scored", location=p.location, salary_listed=p.salary,
+                                 next_action="Waiting for your swipe"))
+            parked += 1
+        except Exception as e:  # noqa: BLE001
+            rep.errors.append(f"review queue {p.company}: {type(e).__name__}: {e}")
+    return parked
+
+
 @dataclass
 class RunReport:
     date: str = ""
@@ -355,6 +382,8 @@ def run_pipeline(cfg, store, settings: Settings, stages: Stages, now: datetime |
                 reason = f"below cap/threshold (score {x.score})"
             rep.skipped.append((f"{x.posting.company} — {x.posting.title}", reason))
     rep.selected = len(chosen) + len(ready)
+    if not dry_run:
+        _park_for_review(scored, chosen, settings, lookup, store, rep, all_jobs)
 
     # 5. tailor everything now (06:00), before waiting for the send window
     work: list[tuple[Job | None, Posting, str | None, str | None]] = [(j, p, None, j.resume_link) for j, p in ready]
