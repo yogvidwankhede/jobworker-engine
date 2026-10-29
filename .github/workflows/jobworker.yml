@@ -45,7 +45,9 @@ env:
 
 jobs:
   worker:
-    runs-on: ubuntu-24.04
+    # Free GitHub-hosted runner by default. Set the repo variable WORKER_RUNNER (e.g. self-hosted) to run on your own
+    # computer, whose home IP trips far fewer anti-bot checks than a datacenter.
+    runs-on: ${{ vars.WORKER_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -87,7 +89,7 @@ jobs:
         run: pip install -e .
 
       - name: Install LaTeX for cloud resume compilation
-        if: contains(fromJSON('["cycle", "run", "ready", "doctor", "dry-run"]'), steps.which.outputs.cmd)
+        if: runner.os == 'Linux' && contains(fromJSON('["cycle", "run", "ready", "doctor", "dry-run"]'), steps.which.outputs.cmd)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -103,7 +105,7 @@ jobs:
         if: contains(fromJSON('["cycle", "run", "ready", "doctor", "dry-run"]'), steps.which.outputs.cmd)
         run: |
           npm install -g @anthropic-ai/claude-code
-          playwright install --with-deps chromium
+          playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} chromium
 
       - name: Restore private cloud state
         id: state

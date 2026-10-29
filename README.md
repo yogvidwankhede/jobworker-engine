@@ -45,3 +45,9 @@ Schedule (America/Chicago): hourly cycle at :30, a daily digest, reply and follo
 Python 3.11+: `pip install -e '.[dev]'`, `playwright install chromium`, `pytest`. The tests in this repo use local fixtures and make no real submissions or network calls. Tests that need a real profile live in the private repo.
 
 Never commit anything under `worker/data/` here: it is git-ignored on purpose.
+
+## Running on your own computer (optional)
+
+Some employers' anti-bot checks (reCAPTCHA scores, emailed human-verification codes) flag forms submitted from GitHub's datacenter IPs. Filling the same forms from your own machine and home connection triggers far fewer flags. The worker never tries to defeat a check; it parks the application when one appears.
+
+To use your machine: register a self-hosted runner under Settings → Actions → Runners, then add the repo variable `WORKER_RUNNER` = `self-hosted`. Requirements on the machine: Python 3.11, Node 22 and a LaTeX install (`pdflatex`). Security: this repo is public, so never enable workflows from fork pull requests on a self-hosted runner (Settings → Actions → General → Fork pull request workflows: require approval for all outside collaborators). Delete the variable to go back to the free hosted runner.
