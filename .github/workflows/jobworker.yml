@@ -37,7 +37,9 @@ env:
   GMAIL_USER: ${{ secrets.GMAIL_USER }}
   GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
   APOLLO_API_KEY: ${{ secrets.APOLLO_API_KEY }}
-  WORKER_LLM_BACKEND: claude_code
+  # Uses the Anthropic API when ANTHROPIC_API_KEY is set (pay per token); otherwise the Claude Code subscription token.
+  WORKER_LLM_BACKEND: ${{ secrets.ANTHROPIC_API_KEY != '' && 'claude' || 'claude_code' }}
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
   CLAUDE_CODE_MODEL: sonnet
   CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 

@@ -20,7 +20,7 @@ Each workflow checks out the private repo, copies `worker/data/` over the engine
 
 1. Create a private repo for your data. Put your profile files under `worker/data/` (see `worker/data/README.md`) and create a `handoff-data` branch for state.
 2. Create a fine-grained personal access token limited to that one private repo with **Contents: Read and write**.
-3. Add these Actions secrets to this repo: `DATA_REPO` (`owner/private-repo`), `DATA_REPO_TOKEN`, `AIRTABLE_TOKEN`, `AIRTABLE_BASE_ID`, `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `CLAUDE_CODE_OAUTH_TOKEN`, and optionally `APOLLO_API_KEY`.
+3. Add these Actions secrets to this repo: `DATA_REPO` (`owner/private-repo`), `DATA_REPO_TOKEN`, `AIRTABLE_TOKEN`, `AIRTABLE_BASE_ID`, `GMAIL_USER`, `GMAIL_APP_PASSWORD`, either `ANTHROPIC_API_KEY` (pay per token; takes priority) or `CLAUDE_CODE_OAUTH_TOKEN` (your Claude subscription), and optionally `APOLLO_API_KEY`.
 4. Run the **JobWorker Cloud Run** workflow with the `doctor` command, then `status`, then `dry-run`, before enabling live cycles.
 
 ## Phone swipe deck
